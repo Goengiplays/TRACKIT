@@ -1,0 +1,578 @@
+import SwiftUI
+import UserNotifications
+
+struct AccountsView: View {
+    @EnvironmentObject private var store: FinanceStore
+    @AppStorage("trackit.hideTotalBalance") private var hideTotalBalance = false
+    @State private var selectedAccount: MoneyAccount?
+    @State private var showingMonthlySummary = false
+    @State private var showingAccountOptions = false
+    @State private var showingAddManualAccount = false
+    @State private var showingPlaid = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 22) {
+                TrackerHeader(eyebrow: "\(store.profile.fullName)'s wallet", title: "Home")
+                ScopeSwitcher()
+                balanceHeader
+
+                Button {
+                    showingMonthlySummary = true
+                } label: {
+                    MonthlyMoneyRingCard(income: store.totalIncome, spending: store.totalSpending)
+                }
+                .buttonStyle(.plain)
+
+                MoneyAlertsCard()
+                accountsSection
+                activitySection
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 120)
+        }
+        .background(AppTheme.background.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .sheet(item: $selectedAccount) { account in
+            AccountPreviewSheet(account: account)
+        }
+        .sheet(isPresented: $showingMonthlySummary) {
+            MonthlySummarySheet()
+        }
+        .sheet(isPresented: $showingAddManualAccount) {
+            AddManualAccountView()
+        }
+        .sheet(isPresented: $showingPlaid) {
+            NavigationStack { PlaidConnectionView() }
+        }
+        .confirmationDialog("Add account", isPresented: $showingAccountOptions, titleVisibility: .visible) {
+            Button("Connect real bank with Plaid") { showingPlaid = true }
+            Button("Add manual bank, card, cash, or crypto") { showingAddManualAccount = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Use Plaid for real bank data, or add a manual account you control yourself.")
+        }
+    }
+
+    private var balanceHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Total balance")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppTheme.secondary)
+                Spacer()
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) {
+                        hideTotalBalance.toggle()
+                    }
+                } label: {
+                    Image(systemName: hideTotalBalance ? "eye.slash.fill" : "eye.fill")
+                        .font(.headline)
+                        .foregroundStyle(AppTheme.blue)
+                        .frame(width: 42, height: 42)
+                        .background(AppTheme.blueSoft)
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel(hideTotalBalance ? "Show total balance" : "Hide total balance")
+            }
+            if hideTotalBalance {
+                Text("$••••••")
+                    .font(.system(size: 44, weight: .medium, design: .default))
+                    .tracking(-1.4)
+                    .foregroundStyle(AppTheme.ink)
+                    .transition(.opacity)
+            } else {
+                AnimatedCurrencyText(value: store.totalBalance, size: 44)
+                    .transition(.opacity)
+            }
+            Text("Live balance animates when activity changes.")
+                .font(.caption)
+                .foregroundStyle(AppTheme.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var accountsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                SectionTitle(title: "Accounts", action: nil)
+                Button {
+                    showingAccountOptions = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(AppTheme.ink)
+                        .frame(width: 42, height: 42)
+                        .background(AppTheme.surface)
+                        .clipShape(Circle())
+                        .shadow(color: AppTheme.blue.opacity(0.16), radius: 14, y: 7)
+                }
+                .accessibilityLabel("Add bank or account")
+            }
+            VStack(spacing: 10) {
+                ForEach(store.scopedAccounts) { account in
+                    Button {
+                        selectedAccount = account
+                    } label: {
+                        WalletAccountRow(account: account)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            withAnimation { store.deleteAccount(account) }
+                        } label: {
+                            Label("Remove account", systemImage: "trash")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var activitySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            NavigationLink {
+                TransactionsView()
+            } label: {
+                SectionTitle(title: "Activity", action: "View all")
+            }
+            .buttonStyle(.plain)
+
+            VStack(spacing: 8) {
+                ForEach(store.scopedTransactions.prefix(5)) { transaction in
+                    NavigationLink {
+                        TransactionDetailView(transaction: transaction)
+                    } label: {
+                        TransactionRow(transaction: transaction)
+                            .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
+
+                    if transaction.id != store.scopedTransactions.prefix(5).last?.id {
+                        Divider().padding(.leading, 58)
+                    }
+                }
+            }
+            .padding(16)
+            .trackerCard(radius: 22)
+        }
+    }
+}
+
+private struct MoneyAlertsCard: View {
+    @EnvironmentObject private var store: FinanceStore
+    @State private var alertsEnabled = false
+
+    private var alertRows: [(String, String, String, Color)] {
+        let spendingRatio = store.totalIncome == 0 ? 1 : store.totalSpending / max(store.totalIncome, 1)
+        return [
+            (
+                "Payment reminders",
+                "Upcoming bills can remind you before due day.",
+                "calendar.badge.clock",
+                AppTheme.blue
+            ),
+            (
+                spendingRatio > 0.75 ? "Spending running hot" : "Spending looks controlled",
+                spendingRatio > 0.75 ? "You are spending over 75% of income this month." : "Keep checking weekly so it stays clean.",
+                "chart.line.uptrend.xyaxis",
+                spendingRatio > 0.75 ? AppTheme.expense : AppTheme.blue
+            ),
+            (
+                store.netProfit < 500 ? "Income needs attention" : "Income momentum",
+                store.netProfit < 500 ? "Net profit is low this month. Add shifts, invoices, or cut one high category." : "You are ahead this month. Protect that gap.",
+                "sparkles",
+                AppTheme.assistantPurple
+            )
+        ]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Money alerts")
+                        .font(.headline.weight(.medium))
+                        .foregroundStyle(AppTheme.ink)
+                    Text("Payment reminders and spending insights")
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $alertsEnabled)
+                    .labelsHidden()
+                    .tint(AppTheme.blue)
+                    .onChange(of: alertsEnabled) { _, enabled in
+                        if enabled { scheduleDemoAlerts() }
+                    }
+            }
+
+            ForEach(alertRows, id: \.0) { item in
+                HStack(spacing: 12) {
+                    IconBubble(systemName: item.2, color: item.3, size: 38)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(item.0)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppTheme.ink)
+                        Text(item.1)
+                            .font(.caption)
+                            .foregroundStyle(AppTheme.secondary)
+                    }
+                    Spacer()
+                }
+            }
+        }
+        .padding(18)
+        .trackerCard(radius: 24)
+    }
+
+    private func scheduleDemoAlerts() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
+            guard granted else { return }
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [
+                "trackit.payment.reminder",
+                "trackit.spending.insight",
+                "trackit.income.check"
+            ])
+            schedule(
+                id: "trackit.payment.reminder",
+                title: "Payment reminder",
+                body: "Check upcoming bills so nothing hits late.",
+                seconds: 6 * 60 * 60
+            )
+            schedule(
+                id: "trackit.spending.insight",
+                title: "Spending check",
+                body: "Open TRACK IT to see if this month is running higher than planned.",
+                seconds: 24 * 60 * 60
+            )
+            schedule(
+                id: "trackit.income.check",
+                title: "Income insight",
+                body: "Review your monthly income and add any cash, tips, or side hustle money.",
+                seconds: 48 * 60 * 60
+            )
+        }
+    }
+
+    private func schedule(id: String, title: String, body: String, seconds: TimeInterval) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+    }
+}
+
+private struct AddManualAccountView: View {
+    @EnvironmentObject private var store: FinanceStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var institution = ""
+    @State private var detail = ""
+    @State private var balanceText = ""
+    @State private var type: AccountType = .bank
+
+    private var balance: Double {
+        Double(balanceText.replacingOccurrences(of: ",", with: "")) ?? 0
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Account") {
+                    TextField("Name", text: $name)
+                    TextField("Institution", text: $institution)
+                    TextField("Details, last 4, or note", text: $detail)
+                    Picker("Type", selection: $type) {
+                        ForEach(AccountType.allCases, id: \.self) { accountType in
+                            Label(accountType.rawValue, systemImage: accountType.icon).tag(accountType)
+                        }
+                    }
+                    TextField("Balance", text: $balanceText)
+                        .keyboardType(.decimalPad)
+                }
+            }
+            .navigationTitle("New account")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        store.addAccount(name: name, detail: detail, type: type, balance: balance, institution: institution)
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+}
+
+private struct WalletAccountRow: View {
+    let account: MoneyAccount
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack(alignment: .bottomLeading) {
+                LinearGradient(
+                    colors: [account.type.color.opacity(0.95), AppTheme.ink],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(account.institution)
+                            .font(.caption2.weight(.semibold))
+                            .lineLimit(1)
+                        Spacer()
+                        Image(systemName: account.type.icon)
+                    }
+                    Spacer()
+                    Text(account.detail.replacingOccurrences(of: "· Due Jun 28", with: ""))
+                        .font(.caption.weight(.medium))
+                        .monospacedDigit()
+                }
+                .foregroundStyle(.white)
+                .padding(12)
+            }
+            .frame(width: 104, height: 68)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: account.type.color.opacity(0.18), radius: 10, y: 5)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(account.name)
+                    .font(.headline.weight(.medium))
+                    .foregroundStyle(AppTheme.ink)
+                Text("\(account.scope.rawValue) \(account.type.rawValue)")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.secondary)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 5) {
+                Text(account.balance.currency)
+                    .font(.headline.weight(.medium))
+                    .foregroundStyle(account.type == .card ? AppTheme.expense : AppTheme.ink)
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.secondary)
+            }
+        }
+        .padding(14)
+        .trackerCard(radius: 22)
+    }
+}
+
+private struct MonthlySummarySheet: View {
+    @EnvironmentObject private var store: FinanceStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var monthOffset = 0
+
+    private var calendar: Calendar { Calendar.current }
+    private var monthDate: Date {
+        calendar.date(byAdding: .month, value: monthOffset, to: Date()) ?? Date()
+    }
+    private var monthTransactions: [FinanceTransaction] {
+        store.scopedTransactions.filter { calendar.isDate($0.date, equalTo: monthDate, toGranularity: .month) }
+    }
+    private var income: Double {
+        monthTransactions.filter { $0.kind == .income }.reduce(0) { $0 + abs($1.amount) }
+    }
+    private var spending: Double {
+        monthTransactions.filter { $0.kind == .expense }.reduce(0) { $0 + abs($1.amount) }
+    }
+    private var topCategories: [(String, Double)] {
+        Dictionary(grouping: monthTransactions.filter { $0.kind == .expense }, by: \.category)
+            .map { ($0.key, $0.value.reduce(0) { $0 + abs($1.amount) }) }
+            .sorted { $0.1 > $1.1 }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Picker("Month", selection: $monthOffset) {
+                        ForEach((-11...0).reversed(), id: \.self) { offset in
+                            Text(label(for: offset)).tag(offset)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    MonthlyMoneyRingCard(income: income, spending: spending)
+
+                    HStack(spacing: 12) {
+                        insightTile("Made", income, AppTheme.blue)
+                        insightTile("Spent", spending, AppTheme.expense)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Where it went")
+                            .font(.headline.weight(.medium))
+                        ForEach(topCategories.prefix(5), id: \.0) { item in
+                            HStack {
+                                Text(item.0)
+                                Spacer()
+                                Text(item.1.currency)
+                                    .fontWeight(.semibold)
+                            }
+                            .font(.subheadline)
+                            ProgressView(value: spending == 0 ? 0 : item.1 / spending)
+                                .tint(AppTheme.blue)
+                        }
+                    }
+                    .padding(18)
+                    .trackerCard(radius: 22)
+
+                    Text(spending > income
+                        ? "Insight: spending is above income for this month. Start with the biggest category above and set a weekly limit so the balance stops leaking."
+                        : "Insight: income is ahead of spending. Keep the gap by watching subscriptions and card charges before the end of the month.")
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.secondary)
+                        .lineSpacing(4)
+                        .padding(18)
+                        .trackerCard(radius: 22)
+                }
+                .padding(20)
+            }
+            .background(AppTheme.background.ignoresSafeArea())
+            .navigationTitle(monthDate.formatted(.dateTime.month(.wide).year()))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .presentationCornerRadius(30)
+    }
+
+    private func label(for offset: Int) -> String {
+        let date = calendar.date(byAdding: .month, value: offset, to: Date()) ?? Date()
+        return offset == 0 ? "This month" : date.formatted(.dateTime.month(.abbreviated).year())
+    }
+
+    private func insightTile(_ title: String, _ value: Double, _ color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(AppTheme.secondary)
+            Text(value.currency)
+                .font(.title3.weight(.medium))
+                .foregroundStyle(color)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .trackerCard(radius: 18)
+    }
+}
+
+struct AccountRow: View {
+    let account: MoneyAccount
+
+    var body: some View {
+        HStack(spacing: 14) {
+            IconBubble(systemName: account.type.icon, color: account.type.color, size: 46)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(account.name)
+                            .font(.body.weight(.medium))
+                    .foregroundStyle(AppTheme.ink)
+                Text(account.detail)
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.secondary)
+            }
+            Spacer()
+            Text(account.balance.currency)
+                .font(.body.weight(.bold))
+                .foregroundStyle(account.type == .card ? AppTheme.expense : AppTheme.ink)
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(AppTheme.secondary)
+        }
+        .padding(.vertical, 7)
+    }
+}
+
+private struct AccountPreviewSheet: View {
+    @EnvironmentObject private var store: FinanceStore
+    @Environment(\.dismiss) private var dismiss
+    let account: MoneyAccount
+
+    private var transactions: [FinanceTransaction] {
+        store.transactions.filter { $0.accountName == account.name && $0.effectiveScope == account.scope }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 22) {
+                    AccountVisualCard(account: account)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(account.balance.currency)
+                    .font(.system(size: 38, weight: .medium, design: .default))
+                            .foregroundStyle(account.type == .card ? AppTheme.expense : AppTheme.ink)
+                        Text(account.type == .card
+                            ? "Card balances count against your total. Pay this down first if utilization is climbing."
+                            : "This account is part of your \(account.scope.rawValue.lowercased()) balance. Review activity often so the total stays accurate.")
+                            .foregroundStyle(AppTheme.secondary)
+                            .lineSpacing(3)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(18)
+                    .trackerCard(radius: 22)
+
+                    SectionTitle(title: "Recent activity")
+                    ForEach(transactions.prefix(6)) { transaction in
+                        TransactionRow(transaction: transaction)
+                    }
+                }
+                .padding(20)
+            }
+            .navigationTitle(account.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .presentationCornerRadius(30)
+    }
+}
+
+struct AccountDetailView: View {
+    @EnvironmentObject private var store: FinanceStore
+    let account: MoneyAccount
+
+    private var transactions: [FinanceTransaction] {
+        store.transactions.filter { $0.accountType == account.type }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Text(account.balance.currency)
+                    .font(.system(size: 40, weight: .medium, design: .default))
+                Text(account.detail)
+                    .foregroundStyle(AppTheme.secondary)
+                Text(account.type == .card
+                    ? "Keep card utilization below 30% and pay the statement balance in full to avoid interest."
+                    : "This account is healthy. Review uncategorized transactions weekly to keep your total accurate.")
+                    .padding(18)
+                    .background(AppTheme.limeSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                SectionTitle(title: "Full activity")
+                ForEach(transactions) { TransactionRow(transaction: $0) }
+            }
+            .padding(20)
+        }
+        .navigationTitle(account.name)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}

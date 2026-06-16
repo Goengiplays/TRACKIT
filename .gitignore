@@ -1,0 +1,4 @@
+PlaidBackend/.env.local
+.DS_Store
+DerivedData/
+*.xcuserstate
