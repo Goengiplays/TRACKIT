@@ -40,3 +40,43 @@ export async function POST(request: NextRequest) {
 export function GET() {
   return badRequest("Use POST /api/create_link_token.");
 }
+import { NextResponse } from "next/server";
+import {
+  Configuration,
+  PlaidApi,
+  PlaidEnvironments,
+  Products,
+  CountryCode,
+} from "plaid";
+
+const config = new Configuration({
+  basePath: PlaidEnvironments[process.env.PLAID_ENV || "sandbox"],
+  baseOptions: {
+    headers: {
+      "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID!,
+      "PLAID-SECRET": process.env.PLAID_SECRET!,
+    },
+  },
+});
+
+const client = new PlaidApi(config);
+
+export async function POST() {
+  try {
+    const response = await client.linkTokenCreate({
+      user: { client_user_id: "trackit-user-1" },
+      client_name: "Track It",
+      products: [Products.Transactions],
+      country_codes: [CountryCode.Us],
+      language: "en",
+      redirect_uri: process.env.PLAID_REDIRECT_URI,
+    });
+
+    return NextResponse.json({ link_token: response.data.link_token });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data || error.message },
+      { status: 500 }
+    );
+  }
+}
