@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { LinkTokenCreateRequest } from "plaid";
 import { badRequest, jsonError } from "@/lib/api";
-import { plaidClient, plaidDefaults } from "@/lib/plaid";
+import { getPlaidClient, plaidDefaults } from "@/lib/plaid";
 
 export const runtime = "nodejs";
 
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
       payload.redirect_uri = process.env.PLAID_REDIRECT_URI;
     }
 
-    const response = await plaidClient.linkTokenCreate(payload);
+    const response = await getPlaidClient().linkTokenCreate(payload);
 
     return NextResponse.json({
       link_token: response.data.link_token,

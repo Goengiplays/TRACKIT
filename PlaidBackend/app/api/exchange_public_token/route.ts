@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { badRequest, jsonError } from "@/lib/api";
-import { plaidClient } from "@/lib/plaid";
+import { getPlaidClient } from "@/lib/plaid";
 
 export const runtime = "nodejs";
 
@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
       return badRequest("Missing public_token.");
     }
 
+    const plaidClient = getPlaidClient();
     const response = await plaidClient.itemPublicTokenExchange({
       public_token: publicToken
     });
