@@ -5,7 +5,6 @@ struct AccountsView: View {
     @AppStorage("trackit.hideTotalBalance") private var hideTotalBalance = false
     @State private var selectedAccount: MoneyAccount?
     @State private var showingMonthlySummary = false
-    @State private var showingAccountOptions = false
     @State private var showingAddManualAccount = false
     @State private var showingPlaid = false
 
@@ -43,14 +42,7 @@ struct AccountsView: View {
             AddManualAccountView()
         }
         .sheet(isPresented: $showingPlaid) {
-            NavigationStack { PlaidConnectionView() }
-        }
-        .confirmationDialog("Add account", isPresented: $showingAccountOptions, titleVisibility: .visible) {
-            Button("Connect real bank with Plaid") { showingPlaid = true }
-            Button("Add manual bank, card, cash, or crypto") { showingAddManualAccount = true }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Use Plaid for real bank data, or add a manual account you control yourself.")
+            NavigationStack { PlaidConnectionView(autoStart: true) }
         }
     }
 
@@ -97,7 +89,7 @@ struct AccountsView: View {
             HStack {
                 SectionTitle(title: "Accounts", action: nil)
                 Button {
-                    showingAccountOptions = true
+                    showingPlaid = true
                 } label: {
                     Image(systemName: "plus")
                         .font(.headline.weight(.semibold))
@@ -108,6 +100,9 @@ struct AccountsView: View {
                         .shadow(color: AppTheme.blue.opacity(0.16), radius: 14, y: 7)
                 }
                 .accessibilityLabel("Add bank or account")
+                .contextMenu {
+                    Button("Add manual account") { showingAddManualAccount = true }
+                }
             }
             VStack(spacing: 10) {
                 ForEach(store.scopedAccounts) { account in

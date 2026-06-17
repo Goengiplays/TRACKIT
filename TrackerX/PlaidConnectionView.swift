@@ -5,43 +5,62 @@ import LinkKit
 
 struct PlaidConnectionView: View {
     @EnvironmentObject private var store: FinanceStore
+    @SwiftUI.Environment(\.dismiss) private var dismiss
     @AppStorage("trackerx.plaidBackendURL") private var backendURL = ""
+    let autoStart: Bool
     @State private var status = "Ready to connect"
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var didAutoStart = false
+    @State private var showingAdvancedSettings = false
     #if canImport(LinkKit)
     @State private var linkSession: PlaidLinkSession?
     @State private var isPresentingLink = false
     #endif
 
+    private let defaultBackendURL = "https://trackit-k31w8ayxa-goengiplays-projects.vercel.app"
+
+    init(autoStart: Bool = false) {
+        self.autoStart = autoStart
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 VStack(spacing: 14) {
-                    IconBubble(systemName: "building.columns.fill", color: AppTheme.forest, size: 70)
+                    ZStack {
+                        Circle()
+                            .fill(AppTheme.limeSoft)
+                            .frame(width: 88, height: 88)
+                        Image(systemName: "building.columns.fill")
+                            .font(.system(size: 34, weight: .semibold))
+                            .foregroundStyle(AppTheme.forest)
+                    }
                     Text("Connect your bank")
                         .font(.title2.weight(.medium))
-                    Text("Plaid securely connects your financial institution. TRACK IT never sees or stores your bank password.")
+                    Text("Plaid opens next so you can securely choose your bank, enter credentials, and allow TRACK IT to sync balances and transactions.")
                         .foregroundStyle(AppTheme.secondary)
                         .multilineTextAlignment(.center)
                         .lineSpacing(3)
                 }
 
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("TRACK IT backend")
-                        .font(.headline)
-                    TextField("https://trackit-k31w8ayxa-goengiplays-projects.vercel.app", text: $backendURL)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .padding(15)
-                        .background(AppTheme.canvas)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                    Text("Paste your Vercel backend URL here. On a real iPhone, use HTTPS from Vercel, not localhost.")
-                        .font(.caption)
-                        .foregroundStyle(AppTheme.secondary)
+                if showingAdvancedSettings || !autoStart {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("TRACK IT backend")
+                            .font(.headline)
+                        TextField(defaultBackendURL, text: $backendURL)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.URL)
+                            .padding(15)
+                            .background(AppTheme.canvas)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                        Text("Advanced setting. The app uses this server to create Plaid Link tokens without exposing your Plaid secret.")
+                            .font(.caption)
+                            .foregroundStyle(AppTheme.secondary)
+                    }
+                    .padding(18)
+                    .trackerCard(radius: 20)
                 }
-                .padding(18)
-                .trackerCard(radius: 20)
 
                 Button {
                     connect()
@@ -63,6 +82,16 @@ struct PlaidConnectionView: View {
                     .font(.subheadline)
                     .foregroundStyle(status.contains("Connected") ? AppTheme.forest : AppTheme.secondary)
 
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) {
+                        showingAdvancedSettings.toggle()
+                    }
+                } label: {
+                    Text(showingAdvancedSettings ? "Hide advanced settings" : "Advanced settings")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(AppTheme.forest)
+                }
+
                 VStack(alignment: .leading, spacing: 14) {
                     SecurityRow(icon: "key.fill", text: "Credentials are handled by Plaid Link")
                     SecurityRow(icon: "arrow.triangle.2.circlepath", text: "Balances and transactions sync through your server")
@@ -78,8 +107,13 @@ struct PlaidConnectionView: View {
         .navigationTitle("Connect bank")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            if backendURL.isEmpty {
-                backendURL = "https://trackit-k31w8ayxa-goengiplays-projects.vercel.app"
+            if backendURL.isEmpty || backendURL.contains("plaidbackend-9ozrgtgtp") {
+                backendURL = defaultBackendURL
+            }
+
+            if autoStart && !didAutoStart {
+                didAutoStart = true
+                connect()
             }
         }
         .alert("Plaid connection", isPresented: Binding(
@@ -138,6 +172,9 @@ struct PlaidConnectionView: View {
                         await MainActor.run {
                             store.importPlaidSnapshot(snapshot)
                             status = "Connected with Plaid"
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
+                                dismiss()
+                            }
                         }
                     } catch {
                         await MainActor.run { errorMessage = error.localizedDescription }
@@ -189,7 +226,7 @@ private struct PlaidAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(["client_user_id": "track-it-user"])
         let (data, response) = try await URLSession.shared.data(for: request)
-        try validate(response)
+        try validate(response, data: data)
         let payload = try JSONDecoder().decode(LinkTokenResponse.self, from: data)
         return payload.linkToken
     }
@@ -201,15 +238,22 @@ private struct PlaidAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(["public_token": publicToken])
         let (data, response) = try await URLSession.shared.data(for: request)
-        try validate(response)
+        try validate(response, data: data)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(PlaidSnapshot.self, from: data)
     }
 
-    private func validate(_ response: URLResponse) throws {
-        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
-            throw PlaidConnectionError.backendUnavailable
+    private func validate(_ response: URLResponse, data: Data) throws {
+        guard let http = response as? HTTPURLResponse else {
+            throw PlaidConnectionError.backendUnavailable("TRACK IT could not reach the Plaid backend.")
+        }
+        guard 200..<300 ~= http.statusCode else {
+            let body = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if http.statusCode == 404 {
+                throw PlaidConnectionError.backendUnavailable("The Plaid backend route is not live on Vercel yet. Redeploy the backend and confirm /api/create_link_token works.")
+            }
+            throw PlaidConnectionError.backendUnavailable(body?.isEmpty == false ? body! : "Plaid backend returned HTTP \(http.statusCode).")
         }
     }
 }
@@ -223,9 +267,11 @@ private struct LinkTokenResponse: Decodable {
 }
 
 private enum PlaidConnectionError: LocalizedError {
-    case backendUnavailable
+    case backendUnavailable(String)
 
     var errorDescription: String? {
-        "The TRACK IT Plaid backend is not configured or could not be reached."
+        switch self {
+        case .backendUnavailable(let message): message
+        }
     }
 }
