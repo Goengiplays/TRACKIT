@@ -1,0 +1,5 @@
+{
+  "installCommand": "cd PlaidBackend && npm install",
+  "buildCommand": "cd PlaidBackend && npm run build",
+  "outputDirectory": "PlaidBackend/.next"
+}
