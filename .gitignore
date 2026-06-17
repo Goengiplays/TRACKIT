@@ -2,3 +2,5 @@ PlaidBackend/.env.local
 .DS_Store
 DerivedData/
 *.xcuserstate
+node_modules/
+.next/
