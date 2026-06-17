@@ -30,7 +30,7 @@ struct PlaidConnectionView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("TRACK IT backend")
                         .font(.headline)
-                    TextField("https://your-vercel-app.vercel.app", text: $backendURL)
+                    TextField("https://trackit-beige-sigma.vercel.app", text: $backendURL)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                         .padding(15)
@@ -79,7 +79,7 @@ struct PlaidConnectionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if backendURL.isEmpty {
-                backendURL = "https://"
+                backendURL = "https://trackit-beige-sigma.vercel.app"
             }
         }
         .alert("Plaid connection", isPresented: Binding(
