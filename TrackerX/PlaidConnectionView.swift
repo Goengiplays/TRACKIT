@@ -30,13 +30,13 @@ struct PlaidConnectionView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("TRACK IT backend")
                         .font(.headline)
-                    TextField("http://localhost:8787", text: $backendURL)
+                    TextField("https://your-vercel-app.vercel.app", text: $backendURL)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                         .padding(15)
                         .background(AppTheme.canvas)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
-                    Text("Run the TRACK IT backend first. On a real iPhone, use your Mac's local network address or a deployed HTTPS backend, not iPhone localhost.")
+                    Text("Paste your Vercel backend URL here. On a real iPhone, use HTTPS from Vercel, not localhost.")
                         .font(.caption)
                         .foregroundStyle(AppTheme.secondary)
                 }
@@ -79,7 +79,7 @@ struct PlaidConnectionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if backendURL.isEmpty {
-                backendURL = "http://localhost:8787"
+                backendURL = "https://"
             }
         }
         .alert("Plaid connection", isPresented: Binding(
@@ -183,11 +183,11 @@ private struct PlaidAPI {
     let baseURL: URL
 
     func createLinkToken() async throws -> String {
-        let url = baseURL.appending(path: "api/plaid/create-link-token")
+        let url = baseURL.appending(path: "api/create_link_token")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(["user_id": "trackerx-user"])
+        request.httpBody = try JSONEncoder().encode(["client_user_id": "track-it-user"])
         let (data, response) = try await URLSession.shared.data(for: request)
         try validate(response)
         let payload = try JSONDecoder().decode(LinkTokenResponse.self, from: data)
@@ -195,7 +195,7 @@ private struct PlaidAPI {
     }
 
     func exchange(publicToken: String) async throws -> PlaidSnapshot {
-        let url = baseURL.appending(path: "api/plaid/exchange-public-token")
+        let url = baseURL.appending(path: "api/exchange_public_token")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
