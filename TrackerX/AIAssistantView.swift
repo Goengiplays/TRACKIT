@@ -205,7 +205,7 @@ private struct AssistantBubble: View {
     }
 }
 
-private struct AssistantAvatar: View {
+struct AssistantAvatar: View {
     let size: CGFloat
 
     var body: some View {

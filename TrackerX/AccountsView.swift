@@ -1,5 +1,4 @@
 import SwiftUI
-import UserNotifications
 
 struct AccountsView: View {
     @EnvironmentObject private var store: FinanceStore
@@ -162,62 +161,39 @@ struct AccountsView: View {
 
 private struct MoneyAlertsCard: View {
     @EnvironmentObject private var store: FinanceStore
-    @State private var alertsEnabled = false
-
-    private var alertRows: [(String, String, String, Color)] {
-        let spendingRatio = store.totalIncome == 0 ? 1 : store.totalSpending / max(store.totalIncome, 1)
-        return [
-            (
-                "Payment reminders",
-                "Upcoming bills can remind you before due day.",
-                "calendar.badge.clock",
-                AppTheme.blue
-            ),
-            (
-                spendingRatio > 0.75 ? "Spending running hot" : "Spending looks controlled",
-                spendingRatio > 0.75 ? "You are spending over 75% of income this month." : "Keep checking weekly so it stays clean.",
-                "chart.line.uptrend.xyaxis",
-                spendingRatio > 0.75 ? AppTheme.expense : AppTheme.blue
-            ),
-            (
-                store.netProfit < 500 ? "Income needs attention" : "Income momentum",
-                store.netProfit < 500 ? "Net profit is low this month. Add shifts, invoices, or cut one high category." : "You are ahead this month. Protect that gap.",
-                "sparkles",
-                AppTheme.assistantPurple
-            )
-        ]
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
+                AssistantAvatar(size: 42)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Money alerts")
+                    Text("Track AI alerts")
                         .font(.headline.weight(.medium))
                         .foregroundStyle(AppTheme.ink)
-                    Text("Payment reminders and spending insights")
+                    Text("Important money signals from your assistant")
                         .font(.caption)
                         .foregroundStyle(AppTheme.secondary)
                 }
                 Spacer()
-                Toggle("", isOn: $alertsEnabled)
-                    .labelsHidden()
-                    .tint(AppTheme.blue)
-                    .onChange(of: alertsEnabled) { _, enabled in
-                        if enabled { scheduleDemoAlerts() }
-                    }
+                Image(systemName: "bell.badge.fill")
+                    .font(.headline)
+                    .foregroundStyle(AppTheme.forest)
+                    .frame(width: 40, height: 40)
+                    .background(AppTheme.limeSoft)
+                    .clipShape(Circle())
             }
 
-            ForEach(alertRows, id: \.0) { item in
+            ForEach(store.moneyInsightAlerts.prefix(3)) { alert in
                 HStack(spacing: 12) {
-                    IconBubble(systemName: item.2, color: item.3, size: 38)
+                    IconBubble(systemName: alert.icon, color: alert.priority.color, size: 38)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(item.0)
+                        Text(alert.title)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(AppTheme.ink)
-                        Text(item.1)
+                        Text(alert.message)
                             .font(.caption)
                             .foregroundStyle(AppTheme.secondary)
+                            .lineLimit(2)
                     }
                     Spacer()
                 }
@@ -225,44 +201,6 @@ private struct MoneyAlertsCard: View {
         }
         .padding(18)
         .trackerCard(radius: 24)
-    }
-
-    private func scheduleDemoAlerts() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
-            guard granted else { return }
-            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [
-                "trackit.payment.reminder",
-                "trackit.spending.insight",
-                "trackit.income.check"
-            ])
-            schedule(
-                id: "trackit.payment.reminder",
-                title: "Payment reminder",
-                body: "Check upcoming bills so nothing hits late.",
-                seconds: 6 * 60 * 60
-            )
-            schedule(
-                id: "trackit.spending.insight",
-                title: "Spending check",
-                body: "Open TRACK IT to see if this month is running higher than planned.",
-                seconds: 24 * 60 * 60
-            )
-            schedule(
-                id: "trackit.income.check",
-                title: "Income insight",
-                body: "Review your monthly income and add any cash, tips, or side hustle money.",
-                seconds: 48 * 60 * 60
-            )
-        }
-    }
-
-    private func schedule(id: String, title: String, body: String, seconds: TimeInterval) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
     }
 }
 

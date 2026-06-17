@@ -217,7 +217,7 @@ struct AnalyticsView: View {
     }
 
     private func color(for category: String) -> Color {
-        let colors: [Color] = [AppTheme.forest, AppTheme.lime, .orange, AppTheme.crypto, .blue, .pink]
+        let colors: [Color] = [AppTheme.forest, AppTheme.lime, .orange, AppTheme.crypto, AppTheme.gold, .pink]
         let index = abs(category.hashValue) % colors.count
         return colors[index]
     }

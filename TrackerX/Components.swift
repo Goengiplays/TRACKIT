@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TrackerHeader: View {
     @EnvironmentObject private var store: FinanceStore
+    @State private var showingNotifications = false
     let eyebrow: String
     let title: String
     var showAvatar = true
@@ -19,20 +20,50 @@ struct TrackerHeader: View {
             }
             Spacer()
             if showAvatar {
-                NavigationLink {
-                    ProfileView()
-                } label: {
-                    ZStack {
-                        Circle().fill(AppTheme.limeSoft)
-                        Text(store.profile.initials)
-                            .font(.headline.weight(.medium))
-                            .foregroundStyle(AppTheme.forest)
+                HStack(spacing: 10) {
+                    Button {
+                        showingNotifications = true
+                    } label: {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "bell.fill")
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(AppTheme.forest)
+                                .frame(width: 46, height: 46)
+                                .background(AppTheme.limeSoft)
+                                .clipShape(Circle())
+
+                            if !store.moneyInsightAlerts.isEmpty {
+                                Text("\(min(store.moneyInsightAlerts.count, 9))")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 18, height: 18)
+                                    .background(AppTheme.expense)
+                                    .clipShape(Circle())
+                                    .offset(x: 2, y: -2)
+                            }
+                        }
                     }
-                    .frame(width: 46, height: 46)
-                    .overlay(Circle().stroke(AppTheme.surface, lineWidth: 3))
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Notifications")
+
+                    NavigationLink {
+                        ProfileView()
+                    } label: {
+                        ZStack {
+                            Circle().fill(AppTheme.limeSoft)
+                            Text(store.profile.initials)
+                                .font(.headline.weight(.medium))
+                                .foregroundStyle(AppTheme.forest)
+                        }
+                        .frame(width: 46, height: 46)
+                        .overlay(Circle().stroke(AppTheme.surface, lineWidth: 3))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+        }
+        .sheet(isPresented: $showingNotifications) {
+            NotificationsView()
         }
     }
 }

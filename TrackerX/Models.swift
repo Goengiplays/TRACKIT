@@ -26,7 +26,7 @@ enum AccountType: String, Codable, CaseIterable {
     var color: Color {
         switch self {
         case .bank: AppTheme.forest
-        case .card: Color.blue
+        case .card: AppTheme.lime
         case .cash: Color(red: 0.14, green: 0.62, blue: 0.36)
         case .crypto: AppTheme.crypto
         }
