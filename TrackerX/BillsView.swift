@@ -32,6 +32,7 @@ struct BillsView: View {
                 }
                 .listRowInsets(EdgeInsets(top: 16, leading: 20, bottom: 12, trailing: 20))
                 .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
 
             Section(store.activeScope.rawValue) {
@@ -40,6 +41,7 @@ struct BillsView: View {
                 } else {
                     ForEach(store.scopedBills.sorted { $0.dueDay < $1.dueDay }) { bill in
                         BillRow(bill: bill)
+                            .listRowBackground(Color.clear)
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
                                     withAnimation { store.deleteBill(bill) }

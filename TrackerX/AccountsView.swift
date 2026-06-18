@@ -7,6 +7,7 @@ struct AccountsView: View {
     @State private var showingMonthlySummary = false
     @State private var showingAddManualAccount = false
     @State private var showingPlaid = false
+    @State private var showingAddNote = false
 
     var body: some View {
         ScrollView {
@@ -14,6 +15,8 @@ struct AccountsView: View {
                 TrackerHeader(eyebrow: "\(store.profile.fullName)'s wallet", title: "Home")
                 ScopeSwitcher()
                 balanceHeader
+                TodoListCard()
+                NotepadCard(showingAddNote: $showingAddNote)
 
                 Button {
                     showingMonthlySummary = true
@@ -22,7 +25,6 @@ struct AccountsView: View {
                 }
                 .buttonStyle(.plain)
 
-                MoneyAlertsCard()
                 accountsSection
                 activitySection
             }
@@ -31,6 +33,9 @@ struct AccountsView: View {
             .padding(.bottom, 120)
         }
         .background(AppTheme.background.ignoresSafeArea())
+        .refreshable {
+            await store.refreshDashboard()
+        }
         .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $selectedAccount) { account in
             AccountPreviewSheet(account: account)
@@ -43,6 +48,9 @@ struct AccountsView: View {
         }
         .sheet(isPresented: $showingPlaid) {
             NavigationStack { PlaidConnectionView(autoStart: true) }
+        }
+        .sheet(isPresented: $showingAddNote) {
+            AddNoteView()
         }
     }
 
@@ -119,6 +127,14 @@ struct AccountsView: View {
                             Label("Remove account", systemImage: "trash")
                         }
                     }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            withAnimation { store.deleteAccount(account) }
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .tint(AppTheme.expense)
+                    }
                 }
             }
         }
@@ -142,6 +158,14 @@ struct AccountsView: View {
                             .padding(.vertical, 4)
                     }
                     .buttonStyle(.plain)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            withAnimation { store.delete(transaction) }
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .tint(AppTheme.expense)
+                    }
 
                     if transaction.id != store.scopedTransactions.prefix(5).last?.id {
                         Divider().padding(.leading, 58)
@@ -154,23 +178,23 @@ struct AccountsView: View {
     }
 }
 
-private struct MoneyAlertsCard: View {
+private struct TodoListCard: View {
     @EnvironmentObject private var store: FinanceStore
+    @State private var newTodo = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                AssistantAvatar(size: 42)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Track AI alerts")
+                    Text("Today’s todo")
                         .font(.headline.weight(.medium))
                         .foregroundStyle(AppTheme.ink)
-                    Text("Important money signals from your assistant")
+                    Text("Money tasks to keep you on track")
                         .font(.caption)
                         .foregroundStyle(AppTheme.secondary)
                 }
                 Spacer()
-                Image(systemName: "bell.badge.fill")
+                Image(systemName: "checklist")
                     .font(.headline)
                     .foregroundStyle(AppTheme.forest)
                     .frame(width: 40, height: 40)
@@ -178,24 +202,149 @@ private struct MoneyAlertsCard: View {
                     .clipShape(Circle())
             }
 
-            ForEach(store.moneyInsightAlerts.prefix(3)) { alert in
+            HStack(spacing: 10) {
+                TextField("Add a task", text: $newTodo)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .background(AppTheme.canvas)
+                    .clipShape(Capsule())
+                Button {
+                    store.addTodo(newTodo)
+                    newTodo = ""
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 42, height: 42)
+                        .background(AppTheme.forest)
+                        .clipShape(Circle())
+                }
+                .disabled(newTodo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .opacity(newTodo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
+            }
+
+            ForEach(store.visibleTodos.prefix(4)) { todo in
                 HStack(spacing: 12) {
-                    IconBubble(systemName: alert.icon, color: alert.priority.color, size: 38)
+                    Button {
+                        withAnimation { store.toggleTodo(todo) }
+                    } label: {
+                        Image(systemName: todo.isDone ? "checkmark.circle.fill" : "circle")
+                            .font(.title3)
+                            .foregroundStyle(todo.isDone ? AppTheme.forest : AppTheme.secondary)
+                    }
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(alert.title)
+                        Text(todo.title)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(AppTheme.ink)
-                        Text(alert.message)
-                            .font(.caption)
-                            .foregroundStyle(AppTheme.secondary)
-                            .lineLimit(2)
+                            .strikethrough(todo.isDone)
                     }
                     Spacer()
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        withAnimation { store.deleteTodo(todo) }
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .tint(AppTheme.expense)
                 }
             }
         }
         .padding(18)
         .trackerCard(radius: 24)
+    }
+}
+
+private struct NotepadCard: View {
+    @EnvironmentObject private var store: FinanceStore
+    @Binding var showingAddNote: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Notepad")
+                        .font(.headline.weight(.medium))
+                        .foregroundStyle(AppTheme.ink)
+                    Text("Quick money thoughts and reminders")
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.secondary)
+                }
+                Spacer()
+                Button {
+                    showingAddNote = true
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.headline)
+                        .foregroundStyle(AppTheme.forest)
+                        .frame(width: 40, height: 40)
+                        .background(AppTheme.limeSoft)
+                        .clipShape(Circle())
+                }
+            }
+
+            if store.visibleNotes.isEmpty {
+                Text("No notes yet. Add reminders about bills, cash, or goals.")
+                    .font(.subheadline)
+                    .foregroundStyle(AppTheme.secondary)
+            } else {
+                ForEach(store.visibleNotes.prefix(2)) { note in
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(note.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppTheme.ink)
+                        Text(note.body)
+                            .font(.caption)
+                            .foregroundStyle(AppTheme.secondary)
+                            .lineLimit(2)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(AppTheme.canvas)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            withAnimation { store.deleteNote(note) }
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .tint(AppTheme.expense)
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .trackerCard(radius: 24)
+    }
+}
+
+private struct AddNoteView: View {
+    @EnvironmentObject private var store: FinanceStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var bodyText = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Title", text: $title)
+                TextField("Note", text: $bodyText, axis: .vertical)
+                    .lineLimit(5...10)
+            }
+            .navigationTitle("New note")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        store.addNote(title: title, body: bodyText)
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -7,6 +7,10 @@ struct TrackerHeader: View {
     let title: String
     var showAvatar = true
 
+    private var unreadAlertCount: Int {
+        store.moneyInsightAlerts.filter { !store.isNotificationRead($0) }.count
+    }
+
     var body: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
@@ -32,8 +36,8 @@ struct TrackerHeader: View {
                                 .background(AppTheme.limeSoft)
                                 .clipShape(Circle())
 
-                            if !store.moneyInsightAlerts.isEmpty {
-                                Text("\(min(store.moneyInsightAlerts.count, 9))")
+                            if unreadAlertCount > 0 {
+                                Text("\(min(unreadAlertCount, 9))")
                                     .font(.caption2.weight(.bold))
                                     .foregroundStyle(.white)
                                     .frame(width: 18, height: 18)

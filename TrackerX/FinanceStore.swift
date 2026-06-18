@@ -19,6 +19,18 @@ final class FinanceStore: ObservableObject {
     @Published var profile: UserProfile {
         didSet { saveProfile() }
     }
+    @Published var todos: [TodoItem] {
+        didSet { saveTodos() }
+    }
+    @Published var notes: [NoteItem] {
+        didSet { saveNotes() }
+    }
+    @Published var readNotificationIDs: Set<String> {
+        didSet { saveStringList(Array(readNotificationIDs), key: readNotificationsKey) }
+    }
+    @Published var clearedNotificationIDs: Set<String> {
+        didSet { saveStringList(Array(clearedNotificationIDs), key: clearedNotificationsKey) }
+    }
 
     private let baseIncomeSources: [IncomeSource] = [
         IncomeSource(name: "Moxies", icon: "fork.knife", color: .orange),
@@ -38,12 +50,20 @@ final class FinanceStore: ObservableObject {
     private let sourcesKey = "trackerx.sources.v1"
     private let billsKey = "trackerx.bills.v1"
     private let profileKey = "trackerx.profile.v1"
+    private let todosKey = "trackerx.todos.v1"
+    private let notesKey = "trackerx.notes.v1"
+    private let readNotificationsKey = "trackerx.notifications.read.v1"
+    private let clearedNotificationsKey = "trackerx.notifications.cleared.v1"
 
     init() {
         accounts = Self.sampleAccounts
         profile = Self.loadProfile(key: profileKey)
         customCategories = Self.loadStringList(key: categoriesKey)
         customSources = Self.loadStringList(key: sourcesKey)
+        readNotificationIDs = Set(Self.loadStringList(key: readNotificationsKey))
+        clearedNotificationIDs = Set(Self.loadStringList(key: clearedNotificationsKey))
+        todos = Self.loadCodableList(key: todosKey) ?? Self.sampleTodos
+        notes = Self.loadCodableList(key: notesKey) ?? Self.sampleNotes
         if let data = UserDefaults.standard.data(forKey: billsKey),
            let saved = try? JSONDecoder().decode([Bill].self, from: data) {
             bills = saved
@@ -93,6 +113,12 @@ final class FinanceStore: ObservableObject {
     }
     var scopedAccounts: [MoneyAccount] {
         accounts.filter { $0.scope == activeScope }
+    }
+    var visibleTodos: [TodoItem] {
+        todos.sorted { $0.createdAt > $1.createdAt }
+    }
+    var visibleNotes: [NoteItem] {
+        notes.sorted { $0.updatedAt > $1.updatedAt }
     }
 
     func balance(for type: AccountType) -> Double {
@@ -178,6 +204,11 @@ final class FinanceStore: ObservableObject {
         bills.removeAll { $0.accountName == account.name && $0.scope == account.scope }
     }
 
+    func refreshDashboard() async {
+        try? await Task.sleep(nanoseconds: 450_000_000)
+        objectWillChange.send()
+    }
+
     func addAccount(name: String, detail: String, type: AccountType, balance: Double, institution: String) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let account = MoneyAccount(
@@ -207,6 +238,52 @@ final class FinanceStore: ObservableObject {
 
     func deleteBill(_ bill: Bill) {
         bills.removeAll { $0.id == bill.id }
+    }
+
+    func addTodo(_ title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        todos.insert(TodoItem(title: trimmed), at: 0)
+    }
+
+    func toggleTodo(_ todo: TodoItem) {
+        guard let index = todos.firstIndex(where: { $0.id == todo.id }) else { return }
+        todos[index].isDone.toggle()
+    }
+
+    func deleteTodo(_ todo: TodoItem) {
+        todos.removeAll { $0.id == todo.id }
+    }
+
+    func addNote(title: String, body: String) {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty || !cleanBody.isEmpty else { return }
+        notes.insert(NoteItem(title: cleanTitle.isEmpty ? "Quick note" : cleanTitle, body: cleanBody), at: 0)
+    }
+
+    func deleteNote(_ note: NoteItem) {
+        notes.removeAll { $0.id == note.id }
+    }
+
+    func isNotificationRead(_ alert: MoneyInsightAlert) -> Bool {
+        readNotificationIDs.contains(alert.id)
+    }
+
+    func markNotificationRead(_ alert: MoneyInsightAlert) {
+        readNotificationIDs.insert(alert.id)
+    }
+
+    func markNotificationUnread(_ alert: MoneyInsightAlert) {
+        readNotificationIDs.remove(alert.id)
+    }
+
+    func clearNotification(_ alert: MoneyInsightAlert) {
+        clearedNotificationIDs.insert(alert.id)
+    }
+
+    func clearAllNotifications() {
+        moneyInsightAlerts.forEach { clearedNotificationIDs.insert($0.id) }
     }
 
     func importPlaidSnapshot(_ snapshot: PlaidSnapshot) {
@@ -305,6 +382,16 @@ final class FinanceStore: ObservableObject {
         UserDefaults.standard.set(data, forKey: profileKey)
     }
 
+    private func saveTodos() {
+        guard let data = try? JSONEncoder().encode(todos) else { return }
+        UserDefaults.standard.set(data, forKey: todosKey)
+    }
+
+    private func saveNotes() {
+        guard let data = try? JSONEncoder().encode(notes) else { return }
+        UserDefaults.standard.set(data, forKey: notesKey)
+    }
+
     private func saveStringList(_ list: [String], key: String) {
         UserDefaults.standard.set(list, forKey: key)
     }
@@ -319,6 +406,25 @@ final class FinanceStore: ObservableObject {
             return .placeholder
         }
         return profile
+    }
+
+    private static func loadCodableList<T: Decodable>(key: String) -> [T]? {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode([T].self, from: data)
+    }
+
+    private static var sampleTodos: [TodoItem] {
+        [
+            TodoItem(title: "Review spending before Friday"),
+            TodoItem(title: "Add cash tips after shift"),
+            TodoItem(title: "Check bills due this week", isDone: true)
+        ]
+    }
+
+    private static var sampleNotes: [NoteItem] {
+        [
+            NoteItem(title: "Money note", body: "Keep $500 untouched for bills before moving anything into spending.")
+        ]
     }
 
     private static var sampleAccounts: [MoneyAccount] {

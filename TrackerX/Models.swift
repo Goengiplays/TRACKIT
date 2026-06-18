@@ -155,6 +155,34 @@ struct Bill: Identifiable, Codable, Hashable {
     }
 }
 
+struct TodoItem: Identifiable, Codable, Hashable {
+    let id: UUID
+    var title: String
+    var isDone: Bool
+    var createdAt: Date
+
+    init(id: UUID = UUID(), title: String, isDone: Bool = false, createdAt: Date = Date()) {
+        self.id = id
+        self.title = title
+        self.isDone = isDone
+        self.createdAt = createdAt
+    }
+}
+
+struct NoteItem: Identifiable, Codable, Hashable {
+    let id: UUID
+    var title: String
+    var body: String
+    var updatedAt: Date
+
+    init(id: UUID = UUID(), title: String, body: String, updatedAt: Date = Date()) {
+        self.id = id
+        self.title = title
+        self.body = body
+        self.updatedAt = updatedAt
+    }
+}
+
 struct UserProfile: Codable, Hashable {
     var fullName: String
     var email: String

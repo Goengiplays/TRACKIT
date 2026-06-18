@@ -18,7 +18,7 @@ struct MoneyInsightAlert: Identifiable, Hashable {
         }
     }
 
-    let id = UUID()
+    let id: String
     let title: String
     let message: String
     let icon: String
@@ -36,6 +36,7 @@ extension FinanceStore {
            lowAccount.balance < 500 {
             alerts.append(
                 MoneyInsightAlert(
+                    id: "low-account-\(lowAccount.id.uuidString)",
                     title: "\(lowAccount.name) is getting low",
                     message: "Track AI noticed this balance is \(lowAccount.balance.currency). Move money here before bills or card payments hit.",
                     icon: "exclamationmark.triangle.fill",
@@ -50,6 +51,7 @@ extension FinanceStore {
             .first {
             alerts.append(
                 MoneyInsightAlert(
+                    id: "bill-\(nextBill.id.uuidString)",
                     title: "\(nextBill.name) is coming up",
                     message: "Your \(nextBill.amount.currency) \(nextBill.category.lowercased()) bill is due around day \(nextBill.dueDay). I’d keep that cash untouched.",
                     icon: "calendar.badge.clock",
@@ -60,6 +62,7 @@ extension FinanceStore {
 
         alerts.append(
             MoneyInsightAlert(
+                id: "spending-ratio-\(activeScope.rawValue)",
                 title: spendingRatio > 0.75 ? "Spending is running hot" : "Spending is under control",
                 message: spendingRatio > 0.75
                     ? "You’ve spent \(totalSpending.currency), over 75% of income. Start with the biggest category before it eats the month."
@@ -71,6 +74,7 @@ extension FinanceStore {
 
         alerts.append(
             MoneyInsightAlert(
+                id: "net-profit-\(activeScope.rawValue)",
                 title: netProfit < 500 ? "Net profit needs attention" : "You’re protecting profit",
                 message: netProfit < 500
                     ? "Your net is \(netProfit.currency). Add missing cash, tips, or side hustle income, then cut one recurring expense."
@@ -80,7 +84,7 @@ extension FinanceStore {
             )
         )
 
-        return alerts
+        return alerts.filter { !clearedNotificationIDs.contains($0.id) }
     }
 }
 
@@ -94,12 +98,49 @@ struct NotificationsView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
-                    assistantHero
+                    if !assistantNotifications {
+                        assistantHero
+                    }
 
                     VStack(alignment: .leading, spacing: 12) {
-                        SectionTitle(title: "Assistant alerts")
+                        HStack {
+                            SectionTitle(title: "Assistant alerts")
+                            Menu {
+                                Button("Mark all read") {
+                                    store.moneyInsightAlerts.forEach(store.markNotificationRead)
+                                }
+                                Button("Mark all unread") {
+                                    store.moneyInsightAlerts.forEach(store.markNotificationUnread)
+                                }
+                                Button("Clear all", role: .destructive) {
+                                    store.clearAllNotifications()
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .font(.headline)
+                                    .foregroundStyle(AppTheme.forest)
+                                    .frame(width: 38, height: 38)
+                                    .background(AppTheme.limeSoft)
+                                    .clipShape(Circle())
+                            }
+                        }
                         ForEach(store.moneyInsightAlerts) { alert in
                             NotificationInsightRow(alert: alert)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        store.clearNotification(alert)
+                                    } label: {
+                                        Label("Clear", systemImage: "trash")
+                                    }
+                                    .tint(AppTheme.expense)
+
+                                    Button {
+                                        store.isNotificationRead(alert) ? store.markNotificationUnread(alert) : store.markNotificationRead(alert)
+                                    } label: {
+                                        Label(store.isNotificationRead(alert) ? "Unread" : "Read", systemImage: store.isNotificationRead(alert) ? "envelope.badge" : "envelope.open")
+                                    }
+                                    .tint(AppTheme.forest)
+                                }
                         }
                     }
                 }
@@ -172,6 +213,7 @@ struct NotificationsView: View {
     }
 
     private func enableAssistantNotifications() {
+        let alerts = Array(store.moneyInsightAlerts.prefix(4))
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
             DispatchQueue.main.async {
                 permissionStatus = granted ? "On. I’ll surface important changes." : "Permission was not allowed in iOS Settings."
@@ -179,7 +221,6 @@ struct NotificationsView: View {
             }
 
             guard granted else { return }
-            let alerts = Array(store.moneyInsightAlerts.prefix(4))
             UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: alerts.map { "trackit.ai.\($0.title)" })
             for (index, alert) in alerts.enumerated() {
                 schedule(alert: alert, seconds: TimeInterval((index + 1) * 900))
@@ -204,31 +245,51 @@ struct NotificationsView: View {
 }
 
 private struct NotificationInsightRow: View {
+    @EnvironmentObject private var store: FinanceStore
     let alert: MoneyInsightAlert
+    @State private var expanded = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 13) {
-            IconBubble(systemName: alert.icon, color: alert.priority.color, size: 42)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(alert.title)
-                        .font(.headline.weight(.medium))
-                        .foregroundStyle(AppTheme.ink)
-                    Spacer()
-                    Text(alert.priority.rawValue)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(alert.priority.color)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(alert.priority.color.opacity(0.12))
-                        .clipShape(Capsule())
+        Button {
+            withAnimation(.snappy(duration: 0.25)) {
+                expanded.toggle()
+                store.markNotificationRead(alert)
+            }
+        } label: {
+            HStack(alignment: .top, spacing: 13) {
+                IconBubble(systemName: alert.icon, color: alert.priority.color, size: 42)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        if !store.isNotificationRead(alert) {
+                            Circle().fill(AppTheme.expense).frame(width: 8, height: 8)
+                        }
+                        Text(alert.title)
+                            .font(.headline.weight(store.isNotificationRead(alert) ? .medium : .semibold))
+                            .foregroundStyle(AppTheme.ink)
+                        Spacer()
+                        Text(alert.priority.rawValue)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(alert.priority.color)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(alert.priority.color.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
+                    Text(alert.message)
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.secondary)
+                        .lineSpacing(2)
+                        .lineLimit(expanded ? nil : 2)
+                    if expanded {
+                        Text("Insight: check the related account, category, or bill and decide whether to move cash, reduce spending, or mark the task complete.")
+                            .font(.caption)
+                            .foregroundStyle(AppTheme.forest)
+                            .padding(.top, 4)
+                    }
                 }
-                Text(alert.message)
-                    .font(.subheadline)
-                    .foregroundStyle(AppTheme.secondary)
-                    .lineSpacing(2)
             }
         }
+        .buttonStyle(.plain)
         .padding(16)
         .trackerCard(radius: 22)
     }

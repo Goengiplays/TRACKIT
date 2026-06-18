@@ -50,6 +50,7 @@ struct CategoriesView: View {
                 }
                 .listRowInsets(EdgeInsets(top: 16, leading: 20, bottom: 12, trailing: 20))
                 .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
 
             Section("Categories") {
@@ -66,6 +67,7 @@ struct CategoriesView: View {
                     .buttonStyle(.plain)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 7, leading: 16, bottom: 7, trailing: 16))
+                    .listRowBackground(Color.clear)
                 }
             }
 
@@ -79,6 +81,7 @@ struct CategoriesView: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(AppTheme.forest)
                     }
+                    .listRowBackground(Color.clear)
                 }
             }
         }

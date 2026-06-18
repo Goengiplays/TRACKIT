@@ -9,6 +9,9 @@ struct RootView: View {
     @State private var selection: AppTab = .home
     @State private var showingAddEntry = false
     @State private var showingAssistant = false
+    @State private var assistantYOffset: CGFloat = 0
+    @State private var assistantDragStart: CGFloat = 0
+    @State private var assistantWasDragged = false
 
     var body: some View {
         Group {
@@ -64,22 +67,35 @@ struct RootView: View {
                 Spacer()
                 HStack {
                     Spacer()
-                    Button {
-                        showingAssistant = true
-                    } label: {
-                        Image(systemName: "sparkles")
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 54, height: 54)
-                            .background(
-                                LinearGradient(colors: [AppTheme.blue, AppTheme.assistantPurple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                            .clipShape(Circle())
-                            .shadow(color: AppTheme.blue.opacity(0.3), radius: 14, y: 7)
-                    }
-                    .accessibilityLabel("Open Track AI")
-                    .padding(.trailing, 18)
-                    .padding(.bottom, 92)
+                    Image(systemName: "sparkles")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 54, height: 54)
+                        .background(AppTheme.expense)
+                        .clipShape(Circle())
+                        .shadow(color: AppTheme.expense.opacity(0.3), radius: 14, y: 7)
+                        .offset(y: assistantYOffset)
+                        .gesture(
+                            DragGesture(minimumDistance: 4)
+                                .onChanged { value in
+                                    assistantWasDragged = true
+                                    assistantYOffset = min(70, max(-360, assistantDragStart + value.translation.height))
+                                }
+                                .onEnded { _ in
+                                    assistantDragStart = assistantYOffset
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                                        assistantWasDragged = false
+                                    }
+                                }
+                        )
+                        .onTapGesture {
+                            if !assistantWasDragged {
+                                showingAssistant = true
+                            }
+                        }
+                        .accessibilityLabel("Open Track AI")
+                        .padding(.trailing, 18)
+                        .padding(.bottom, 92)
                 }
             }
         }
