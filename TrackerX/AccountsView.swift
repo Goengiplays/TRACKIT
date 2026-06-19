@@ -7,6 +7,31 @@ struct AccountsView: View {
     @State private var showingMonthlySummary = false
     @State private var showingAddManualAccount = false
     @State private var showingPlaid = false
+    @State private var selectedDailyBarIndex = 6
+
+    private var dailyBalanceStats: [DailyBalanceStat] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+
+        return (0..<7).map { index in
+            let offset = 6 - index
+            let day = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
+            let dayTransactions = store.scopedTransactions.filter { calendar.isDate($0.date, inSameDayAs: day) }
+            let income = dayTransactions
+                .filter { $0.kind == .income }
+                .reduce(0) { $0 + abs($1.amount) }
+            let spending = dayTransactions
+                .filter { $0.kind == .expense }
+                .reduce(0) { $0 + abs($1.amount) }
+
+            return DailyBalanceStat(
+                date: day,
+                income: income,
+                spending: spending,
+                transactions: dayTransactions.count
+            )
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -91,15 +116,39 @@ struct AccountsView: View {
                 BalancePill(title: "Spent", value: store.totalSpending, color: AppTheme.forest, icon: "arrow.up.right")
             }
 
-            HStack(alignment: .bottom, spacing: 7) {
-                ForEach(Array([0.34, 0.56, 0.43, 0.75, 0.62, 0.91, 0.78, 1.0].enumerated()), id: \.offset) { index, value in
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(index == 7 ? AppTheme.forest : AppTheme.blue.opacity(0.28 + value * 0.34))
-                        .frame(height: 24 + value * 38)
-                        .frame(maxWidth: .infinity)
+            let stats = dailyBalanceStats
+            let maxNet = max(stats.map { abs($0.net) }.max() ?? 1, 1)
+            HStack(alignment: .bottom, spacing: 8) {
+                ForEach(Array(stats.enumerated()), id: \.element.date) { index, stat in
+                    let normalized = abs(stat.net) / maxNet
+                    let isSelected = selectedDailyBarIndex == index
+                    Button {
+                        withAnimation(.snappy(duration: 0.28)) {
+                            selectedDailyBarIndex = index
+                        }
+                    } label: {
+                        VStack(spacing: 8) {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(isSelected ? AppTheme.forest : AppTheme.blue.opacity(0.30 + normalized * 0.38))
+                                .frame(height: 28 + normalized * 42)
+                                .frame(maxWidth: .infinity)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .stroke(.white.opacity(isSelected ? 0.42 : 0), lineWidth: 1)
+                                )
+                                .shadow(color: isSelected ? AppTheme.forest.opacity(0.26) : .clear, radius: 12, y: 7)
+                            Text(stat.shortLabel)
+                                .font(.caption2.weight(isSelected ? .bold : .semibold))
+                                .foregroundStyle(isSelected ? AppTheme.forest : AppTheme.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(stat.accessibilityLabel), net \(stat.net.currency)")
                 }
             }
-            .frame(height: 72)
+            .frame(height: 96)
+
+            DailyBalanceStatCard(stat: stats[min(selectedDailyBarIndex, stats.count - 1)])
 
             HStack {
                 Label("Live animated balance", systemImage: "waveform.path.ecg")
@@ -216,6 +265,86 @@ struct AccountsView: View {
             .padding(16)
             .trackerCard(radius: 22)
         }
+    }
+}
+
+private struct DailyBalanceStat {
+    let date: Date
+    let income: Double
+    let spending: Double
+    let transactions: Int
+
+    var net: Double { income - spending }
+
+    var shortLabel: String {
+        if Calendar.current.isDateInToday(date) { return "Today" }
+        if Calendar.current.isDateInYesterday(date) { return "Yest" }
+        return date.formatted(.dateTime.weekday(.abbreviated))
+    }
+
+    var title: String {
+        if Calendar.current.isDateInToday(date) { return "Today" }
+        if Calendar.current.isDateInYesterday(date) { return "Yesterday" }
+        return date.formatted(.dateTime.weekday(.wide))
+    }
+
+    var accessibilityLabel: String {
+        "\(title), \(date.formatted(date: .abbreviated, time: .omitted))"
+    }
+}
+
+private struct DailyBalanceStatCard: View {
+    let stat: DailyBalanceStat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(stat.title)
+                        .font(.headline.weight(.medium))
+                        .foregroundStyle(AppTheme.ink)
+                    Text(stat.date.formatted(date: .abbreviated, time: .omitted))
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.secondary)
+                }
+                Spacer()
+                Text(stat.net.currency)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(stat.net >= 0 ? AppTheme.forest : AppTheme.expense)
+            }
+
+            HStack(spacing: 8) {
+                MiniDailyMetric(title: "Made", value: stat.income, color: AppTheme.blue)
+                MiniDailyMetric(title: "Spent", value: stat.spending, color: AppTheme.forest)
+                MiniDailyMetric(title: "Moves", value: Double(stat.transactions), color: AppTheme.secondary, isCount: true)
+            }
+        }
+        .padding(14)
+        .background(AppTheme.surface.opacity(0.86))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+    }
+}
+
+private struct MiniDailyMetric: View {
+    let title: String
+    let value: Double
+    let color: Color
+    var isCount = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(AppTheme.secondary)
+            Text(isCount ? "\(Int(value))" : value.compactCurrency)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(color)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(AppTheme.canvas.opacity(0.85))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
