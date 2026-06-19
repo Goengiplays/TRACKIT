@@ -5,7 +5,9 @@ final class FinanceStore: ObservableObject {
     @Published var transactions: [FinanceTransaction] {
         didSet { saveTransactions() }
     }
-    @Published var accounts: [MoneyAccount]
+    @Published var accounts: [MoneyAccount] {
+        didSet { saveAccounts() }
+    }
     @Published var activeScope: AccountScope = .personal
     @Published var customCategories: [String] {
         didSet { saveStringList(customCategories, key: categoriesKey) }
@@ -45,6 +47,7 @@ final class FinanceStore: ObservableObject {
         "Entertainment", "Business", "Income", "Tips", "Other"
     ]
 
+    private static let accountsKey = "trackerx.accounts.v1"
     private let storageKey = "trackerx.transactions.v1"
     private let categoriesKey = "trackerx.categories.v1"
     private let sourcesKey = "trackerx.sources.v1"
@@ -56,7 +59,7 @@ final class FinanceStore: ObservableObject {
     private let clearedNotificationsKey = "trackerx.notifications.cleared.v1"
 
     init() {
-        accounts = Self.sampleAccounts
+        accounts = Self.loadCodableList(key: Self.accountsKey) ?? Self.sampleAccounts
         profile = Self.loadProfile(key: profileKey)
         customCategories = Self.loadStringList(key: categoriesKey)
         customSources = Self.loadStringList(key: sourcesKey)
@@ -95,7 +98,7 @@ final class FinanceStore: ObservableObject {
 
     var totalBalance: Double {
         accounts.filter { $0.scope == activeScope }.reduce(0) { total, account in
-            account.type == .card ? total - abs(account.balance) : total + account.balance
+            account.type == .card ? total - account.balance : total + account.balance
         }
     }
 
@@ -165,7 +168,8 @@ final class FinanceStore: ObservableObject {
         date: Date,
         hoursWorked: Double? = nil
     ) {
-        let account = accounts.first { $0.scope == activeScope && $0.type == accountType }
+        let accountIndex = accountIndexForManualEntry(accountType)
+        let account = accounts[accountIndex]
         let entry = FinanceTransaction(
             title: title.isEmpty ? source : title,
             subtitle: kind == .income ? "Manual income" : "Manual expense",
@@ -175,15 +179,16 @@ final class FinanceStore: ObservableObject {
             category: category,
             source: source,
             accountType: accountType,
-            accountName: account?.name,
+            accountName: account.name,
             scope: activeScope,
             hoursWorked: kind == .income ? hoursWorked : nil
         )
         transactions.insert(entry, at: 0)
 
-        if let index = accounts.firstIndex(where: { $0.id == account?.id }) {
-            accounts[index].balance += kind == .income ? abs(amount) : -abs(amount)
-        }
+        applyBalanceDelta(
+            balanceDelta(for: kind, amount: amount, accountType: accountType),
+            toAccountAt: accountIndex
+        )
     }
 
     func addCategory(_ name: String) {
@@ -338,15 +343,20 @@ final class FinanceStore: ObservableObject {
     func delete(_ transaction: FinanceTransaction) {
         if let name = transaction.accountName,
            let index = accounts.firstIndex(where: { $0.name == name && $0.scope == transaction.effectiveScope }) {
-            accounts[index].balance -= transaction.kind == .income ? abs(transaction.amount) : -abs(transaction.amount)
+            applyBalanceDelta(
+                -balanceDelta(for: transaction.kind, amount: transaction.amount, accountType: transaction.accountType),
+                toAccountAt: index
+            )
         }
         transactions.removeAll { $0.id == transaction.id }
     }
 
     func clearAllData() {
         transactions.removeAll()
-        for index in accounts.indices {
-            accounts[index].balance = 0
+        accounts = accounts.map { account in
+            var cleared = account
+            cleared.balance = 0
+            return cleared
         }
         bills.removeAll()
     }
@@ -367,9 +377,58 @@ final class FinanceStore: ObservableObject {
         }
     }
 
+    private func balanceDelta(for kind: EntryKind, amount: Double, accountType: AccountType) -> Double {
+        let amount = abs(amount)
+
+        if accountType == .card {
+            return kind == .expense ? amount : -amount
+        }
+
+        return kind == .income ? amount : -amount
+    }
+
+    private func accountIndexForManualEntry(_ accountType: AccountType) -> Int {
+        if let index = accounts.firstIndex(where: { $0.scope == activeScope && $0.type == accountType }) {
+            return index
+        }
+
+        let account = MoneyAccount(
+            name: defaultAccountName(for: accountType),
+            detail: "Auto-created for manual entries",
+            type: accountType,
+            balance: 0,
+            isConnected: false,
+            scope: activeScope,
+            institution: "Track It"
+        )
+        accounts.insert(account, at: 0)
+        return 0
+    }
+
+    private func defaultAccountName(for type: AccountType) -> String {
+        switch type {
+        case .bank: "Manual Bank"
+        case .card: "Manual Card"
+        case .cash: "Cash Wallet"
+        case .crypto: "Manual Crypto"
+        }
+    }
+
+    private func applyBalanceDelta(_ delta: Double, toAccountAt index: Int) {
+        guard accounts.indices.contains(index) else { return }
+        var updatedAccounts = accounts
+        updatedAccounts[index].balance += delta
+        accounts = updatedAccounts
+    }
+
     private func saveTransactions() {
         guard let data = try? JSONEncoder().encode(transactions) else { return }
         UserDefaults.standard.set(data, forKey: storageKey)
+    }
+
+    private func saveAccounts() {
+        guard let data = try? JSONEncoder().encode(accounts) else { return }
+        UserDefaults.standard.set(data, forKey: Self.accountsKey)
     }
 
     private func saveBills() {
