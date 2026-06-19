@@ -7,7 +7,6 @@ struct AccountsView: View {
     @State private var showingMonthlySummary = false
     @State private var showingAddManualAccount = false
     @State private var showingPlaid = false
-    @State private var showingAddNote = false
 
     var body: some View {
         ScrollView {
@@ -15,8 +14,6 @@ struct AccountsView: View {
                 TrackerHeader(eyebrow: "\(store.profile.fullName)'s wallet", title: "Home")
                 ScopeSwitcher()
                 balanceHeader
-                TodoListCard()
-                NotepadCard(showingAddNote: $showingAddNote)
 
                 Button {
                     showingMonthlySummary = true
@@ -49,17 +46,19 @@ struct AccountsView: View {
         .sheet(isPresented: $showingPlaid) {
             NavigationStack { PlaidConnectionView(autoStart: true) }
         }
-        .sheet(isPresented: $showingAddNote) {
-            AddNoteView()
-        }
     }
 
     private var balanceHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("Total balance")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AppTheme.secondary)
+                HStack(spacing: 8) {
+                    Image(systemName: "crown.fill")
+                        .font(.caption.weight(.bold))
+                    Text("TOTAL NET BALANCE")
+                        .font(.caption.weight(.bold))
+                        .tracking(1.6)
+                }
+                .foregroundStyle(AppTheme.forest)
                 Spacer()
                 Button {
                     withAnimation(.snappy(duration: 0.25)) {
@@ -75,21 +74,79 @@ struct AccountsView: View {
                 }
                 .accessibilityLabel(hideTotalBalance ? "Show total balance" : "Hide total balance")
             }
+
             if hideTotalBalance {
                 Text("$••••••")
-                    .font(.system(size: 44, weight: .medium, design: .default))
-                    .tracking(-1.4)
+                    .font(.system(size: 48, weight: .medium, design: .serif))
+                    .tracking(-1.6)
                     .foregroundStyle(AppTheme.ink)
                     .transition(.opacity)
             } else {
-                AnimatedCurrencyText(value: store.totalBalance, size: 44)
+                AnimatedCurrencyText(value: store.totalBalance, size: 48)
                     .transition(.opacity)
             }
-            Text("Live balance animates when activity changes.")
-                .font(.caption)
-                .foregroundStyle(AppTheme.secondary)
+
+            HStack(spacing: 10) {
+                BalancePill(title: "Income", value: store.totalIncome, color: AppTheme.blue, icon: "arrow.down.left")
+                BalancePill(title: "Spent", value: store.totalSpending, color: AppTheme.forest, icon: "arrow.up.right")
+            }
+
+            HStack(alignment: .bottom, spacing: 7) {
+                ForEach(Array([0.34, 0.56, 0.43, 0.75, 0.62, 0.91, 0.78, 1.0].enumerated()), id: \.offset) { index, value in
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(index == 7 ? AppTheme.forest : AppTheme.blue.opacity(0.28 + value * 0.34))
+                        .frame(height: 24 + value * 38)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: 72)
+
+            HStack {
+                Label("Live animated balance", systemImage: "waveform.path.ecg")
+                Spacer()
+                Text("\(store.scopedAccounts.count) accounts")
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(AppTheme.secondary)
         }
+        .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        AppTheme.surface,
+                        AppTheme.blueSoft,
+                        AppTheme.surface
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                Circle()
+                    .fill(AppTheme.blue.opacity(0.18))
+                    .frame(width: 190, height: 190)
+                    .blur(radius: 22)
+                    .offset(x: 130, y: -80)
+                Circle()
+                    .fill(AppTheme.forest.opacity(0.10))
+                    .frame(width: 160, height: 160)
+                    .blur(radius: 24)
+                    .offset(x: -130, y: 92)
+            }
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 34, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [.white.opacity(0.7), AppTheme.blue.opacity(0.22), AppTheme.forest.opacity(0.18)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+        .shadow(color: AppTheme.blue.opacity(0.22), radius: 28, x: 0, y: 16)
     }
 
     private var accountsSection: some View {
@@ -114,26 +171,10 @@ struct AccountsView: View {
             }
             VStack(spacing: 10) {
                 ForEach(store.scopedAccounts) { account in
-                    Button {
+                    SwipeDeleteAccountRow(account: account) {
                         selectedAccount = account
-                    } label: {
-                        WalletAccountRow(account: account)
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu {
-                        Button(role: .destructive) {
-                            withAnimation { store.deleteAccount(account) }
-                        } label: {
-                            Label("Remove account", systemImage: "trash")
-                        }
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            withAnimation { store.deleteAccount(account) }
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                        .tint(AppTheme.expense)
+                    } onDelete: {
+                        withAnimation { store.deleteAccount(account) }
                     }
                 }
             }
@@ -175,6 +216,40 @@ struct AccountsView: View {
             .padding(16)
             .trackerCard(radius: 22)
         }
+    }
+}
+
+private struct BalancePill: View {
+    let title: String
+    let value: Double
+    let color: Color
+    let icon: String
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: icon)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(color)
+                .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(AppTheme.secondary)
+                Text(value.compactCurrency)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppTheme.ink)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(AppTheme.surface.opacity(0.82))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(AppTheme.border, lineWidth: 1)
+        )
     }
 }
 
@@ -551,6 +626,73 @@ private struct MonthlySummarySheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .trackerCard(radius: 18)
+    }
+}
+
+private struct SwipeDeleteAccountRow: View {
+    let account: MoneyAccount
+    let onTap: () -> Void
+    let onDelete: () -> Void
+
+    @State private var offset: CGFloat = 0
+    @State private var startOffset: CGFloat = 0
+
+    private let deleteWidth: CGFloat = 92
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button(role: .destructive) {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                    offset = 0
+                    startOffset = 0
+                }
+                onDelete()
+            } label: {
+                VStack(spacing: 5) {
+                    Image(systemName: "trash.fill")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Delete")
+                        .font(.caption2.weight(.semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(width: deleteWidth)
+                .frame(maxHeight: .infinity)
+            }
+            .buttonStyle(.plain)
+            .background(AppTheme.expense)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+
+            Button(action: onTap) {
+                WalletAccountRow(account: account)
+                    .background(AppTheme.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .offset(x: offset)
+            .gesture(
+                DragGesture(minimumDistance: 10)
+                    .onChanged { value in
+                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                        let nextOffset = startOffset + value.translation.width
+                        offset = min(0, max(-deleteWidth, nextOffset))
+                    }
+                    .onEnded { value in
+                        let shouldOpen = offset < -deleteWidth * 0.45 || value.predictedEndTranslation.width < -deleteWidth
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                            offset = shouldOpen ? -deleteWidth : 0
+                            startOffset = offset
+                        }
+                    }
+            )
+            .contextMenu {
+                Button(role: .destructive) {
+                    onDelete()
+                } label: {
+                    Label("Remove account", systemImage: "trash")
+                }
+            }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 

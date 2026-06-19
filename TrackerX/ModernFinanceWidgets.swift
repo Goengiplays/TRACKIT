@@ -39,7 +39,7 @@ struct MonthlyMoneyRingCard: View {
                     .rotationEffect(.degrees(-90))
                 Circle()
                     .trim(from: 0, to: max(0.04, spendingShare) * drawProgress)
-                    .stroke(AppTheme.expense.opacity(0.82), style: StrokeStyle(lineWidth: 18, lineCap: .round))
+                    .stroke(AppTheme.forest.opacity(0.82), style: StrokeStyle(lineWidth: 18, lineCap: .round))
                     .rotationEffect(.degrees(130))
 
                 VStack(spacing: 4) {
@@ -57,7 +57,7 @@ struct MonthlyMoneyRingCard: View {
 
             HStack(spacing: 12) {
                 RingMetric(title: "Income", value: income, color: AppTheme.blue)
-                RingMetric(title: "Spent", value: spending, color: AppTheme.expense)
+                RingMetric(title: "Spent", value: spending, color: AppTheme.forest)
             }
         }
         .padding(20)

@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum AppTab: Hashable {
-    case home, analytics, add, categories, bills
+    case home, analytics, add, todos, notes, categories, bills
 }
 
 struct RootView: View {
@@ -39,6 +39,14 @@ struct RootView: View {
                     .tag(AppTab.add)
                     .tabItem { Text("") }
 
+                NavigationStack { TodoPageView() }
+                    .tag(AppTab.todos)
+                    .tabItem { Label("Todo", systemImage: "checklist") }
+
+                NavigationStack { NotesPageView() }
+                    .tag(AppTab.notes)
+                    .tabItem { Label("Notes", systemImage: "note.text") }
+
                 NavigationStack { CategoriesView() }
                     .tag(AppTab.categories)
                     .tabItem { Label("Categories", systemImage: "square.grid.2x2.fill") }
@@ -71,9 +79,19 @@ struct RootView: View {
                         .font(.headline.weight(.semibold))
                         .foregroundStyle(.white)
                         .frame(width: 54, height: 54)
-                        .background(AppTheme.expense)
+                        .background(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.72, green: 0.28, blue: 1.0),
+                                    Color(red: 0.36, green: 0.12, blue: 0.88),
+                                    Color(red: 0.18, green: 0.10, blue: 0.42)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                         .clipShape(Circle())
-                        .shadow(color: AppTheme.expense.opacity(0.3), radius: 14, y: 7)
+                        .shadow(color: AppTheme.assistantPurple.opacity(0.34), radius: 16, y: 8)
                         .offset(y: assistantYOffset)
                         .gesture(
                             DragGesture(minimumDistance: 4)

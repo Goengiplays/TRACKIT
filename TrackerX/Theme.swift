@@ -14,7 +14,7 @@ enum AppTheme {
     static let expense = Color(red: 0.93, green: 0.34, blue: 0.37)
     static let crypto = Color(red: 0.08, green: 0.58, blue: 0.50)
     static let gold = Color(red: 0.82, green: 0.67, blue: 0.32)
-    static let assistantPurple = Color(red: 0.12, green: 0.48, blue: 0.30)
+    static let assistantPurple = Color(red: 0.45, green: 0.18, blue: 0.95)
 
     static let lime = blue
     static let limeSoft = blueSoft
